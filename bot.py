@@ -11,12 +11,10 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from telegram.constants import ParseMode
 
 # ========== НАСТРОЙКА ==========
-# ТОКЕН БОТА (получить у @BotFather)
-BOT_TOKEN = "8435489975:AAF-Sn80y-MLTtsuIXkfF7Kulh2rAfMzPeo"  # ← ЗАМЕНИ НА СВОЙ ТОКЕН!
+BOT_TOKEN = "8435489975:AAF-Sn80y-MLTtsuIXkfF7Kulh2rAfMzPeo"
 
-# НАСТРОЙКИ БОТА
-TAG_INTERVAL = 2  # Интервал между тегами в секундах
-MAX_PLAYERS = 2000  # Максимальное количество игроков
+TAG_INTERVAL = 2
+MAX_PLAYERS = 2000
 
 # ========== ЛОГИРОВАНИЕ ==========
 logging.basicConfig(
@@ -28,7 +26,6 @@ logger = logging.getLogger(__name__)
 # ========== СОСТОЯНИЕ ТЕГА ==========
 @dataclass
 class TagState:
-    """Состояние тега в чате"""
     players: List[dict] = field(default_factory=list)
     current_index: int = 0
     is_active: bool = False
@@ -39,7 +36,6 @@ class TagState:
     paused: bool = False
     
     def reset(self):
-        """Сбросить состояние"""
         self.players = []
         self.current_index = 0
         self.is_active = False
@@ -49,20 +45,17 @@ class TagState:
         self.tagged_count = 0
         self.paused = False
 
-# Хранилище состояний для всех чатов
 chat_states: Dict[int, TagState] = defaultdict(TagState)
 active_tasks: Dict[int, asyncio.Task] = {}
 
 # ========== ОСНОВНОЙ КЛАСС БОТА ==========
 class TagBot:
-    """Основной класс бота"""
     
     def __init__(self, token: str):
         self.token = token
         self.application = None
         
     def setup_handlers(self):
-        """Настройка обработчиков команд"""
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("tagall", self.tag_all_command))
         self.application.add_handler(CommandHandler("stop", self.stop_command))
@@ -72,114 +65,81 @@ class TagBot:
         self.application.add_handler(CommandHandler("resume", self.resume_command))
         self.application.add_handler(CommandHandler("status", self.status_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
-        
-        # Обработчик кнопок
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
-        
-        # Обработчик ошибок
         self.application.add_error_handler(self.error_handler)
         
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /start - приветствие и справка"""
         user = update.effective_user
         welcome_text = f"""
 👋 Привет, {user.first_name}! 
 
-Я - **TagMaster Bot** - профессиональный бот для массового тега участников в чатах!
+Я - **TagMaster Bot** - бот для массового тега участников!
 
 📋 **Основные команды:**
-• `/tagall [текст]` - Начать поочередный тег всех участников
+• `/tagall` - Начать тег всех участников
 • `/stop` - Остановить текущий тег
 • `/pause` - Приостановить тег
 • `/resume` - Возобновить тег
-• `/next` - Перейти к следующему участнику
-• `/reset` - Сбросить всё и начать сначала
-• `/status` - Показать статус текущего тега
-• `/help` - Показать это сообщение
-
-⚙️ **Как это работает:**
-1️⃣ Бот собирает список участников чата
-2️⃣ Начинает по очереди тегать каждого
-3️⃣ Между тегами пауза 2 секунды
-4️⃣ Можно добавлять свой текст к упоминанию
-5️⃣ Администраторы могут управлять процессом
+• `/status` - Показать статус
 
 🔒 **Требования:**
 • Бот должен быть администратором чата
 • Только администраторы могут управлять тегом
 
-💡 **Пример использования:**
-`/tagall Внимание! Важное объявление для всех!`
-
-📊 **Статистика:** Бот отслеживает прогресс и показывает статус
-
-🚀 **Готов к работе! Используй /tagall для начала.**
+🚀 **Используй /tagall для начала!**
 """
         await update.message.reply_text(welcome_text, parse_mode=ParseMode.MARKDOWN)
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /help - подробная справка"""
-        help_text = f"""
-📚 **Подробная справка по командам:**
+        help_text = """
+📚 **Команды:**
 
-**Основные команды:**
-• `/tagall [текст]` - Запускает процесс тега
-• `/stop` - Немедленно останавливает текущий тег
+• `/tagall` - Запускает тег всех участников
+• `/stop` - Останавливает текущий тег
 • `/pause` - Приостанавливает тег
-• `/resume` - Продолжает приостановленный тег
-• `/next` - Принудительно переключает на следующего
-• `/reset` - Полностью сбрасывает текущий тег
-• `/status` - Показывает прогресс тега
+• `/resume` - Продолжает тег
+• `/status` - Показывает прогресс
 
-**Дополнительные возможности:**
-• Автоматическая пауза в {TAG_INTERVAL} секунд между тегами
-• Отображение прогресса (номер/всего)
-• Кнопки управления под каждым сообщением
-• Защита от спама и ошибок
-• Логирование всех действий
-
-**Для администраторов:**
-• Все команды доступны только администраторам чата
-• Бот должен быть администратором для получения списка участников
-
-**Ограничения:**
-• Максимум {MAX_PLAYERS} участников за один тег
-• Бот автоматически исключает себя из списка
-
-❓ **Проблемы?**
-Убедитесь, что:
-1. Бот является администратором чата
-2. У бота есть права на чтение сообщений
-3. Вы используете команды в правильном чате
+**Важно:**
+• Бот должен быть администратором
+• Команды доступны только админам
+• Интервал между тегами: 2 секунды
 """
         await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
 
     async def is_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-        """Проверка прав администратора"""
         try:
             user_id = update.effective_user.id
             chat_id = update.effective_chat.id
-            
             member = await context.bot.get_chat_member(chat_id, user_id)
             return member.status in [ChatMember.ADMINISTRATOR, ChatMember.OWNER]
         except Exception as e:
             logger.error(f"Ошибка проверки прав: {e}")
             return False
 
-    async def get_chat_members_safe(self, bot, chat_id: int) -> List[dict]:
-        """Безопасное получение участников чата"""
+    async def get_all_chat_members(self, bot, chat_id: int) -> List[dict]:
+        """Получение ВСЕХ участников чата (не только администраторов)"""
         members = []
         try:
-            admins = await bot.get_chat_administrators(chat_id)
-            for admin in admins:
+            # Получаем всех участников чата
+            async for member in bot.get_chat_members(chat_id):
+                # Пропускаем ботов
+                if member.user.is_bot:
+                    continue
+                    
                 members.append({
-                    'id': admin.user.id,
-                    'username': admin.user.username,
-                    'first_name': admin.user.first_name,
-                    'last_name': admin.user.last_name,
-                    'full_name': admin.user.full_name or admin.user.first_name,
-                    'is_bot': admin.user.is_bot
+                    'id': member.user.id,
+                    'username': member.user.username,
+                    'first_name': member.user.first_name,
+                    'last_name': member.user.last_name,
+                    'full_name': member.user.full_name or member.user.first_name,
+                    'is_bot': member.user.is_bot
                 })
+                
+                # Ограничение на количество
+                if len(members) >= MAX_PLAYERS:
+                    break
+                    
         except Exception as e:
             logger.error(f"Ошибка получения участников: {e}")
             raise
@@ -202,11 +162,13 @@ class TagBot:
             )
             return
         
-        status_msg = await update.message.reply_text("🔄 Получаю список участников чата...")
+        status_msg = await update.message.reply_text("🔄 Получаю список всех участников чата...")
         
         try:
-            members = await self.get_chat_members_safe(context.bot, chat.id)
+            # Получаем ВСЕХ участников
+            members = await self.get_all_chat_members(context.bot, chat.id)
             
+            # Убираем дубликаты и бота
             unique_members = {}
             for member in members:
                 if member['id'] != context.bot.id and not member['is_bot']:
@@ -218,22 +180,18 @@ class TagBot:
                 await status_msg.edit_text("❌ В чате недостаточно участников (нужно минимум 2 человека).")
                 return
             
-            if len(players) > MAX_PLAYERS:
-                await status_msg.edit_text(f"❌ Слишком много участников! Максимум: {MAX_PLAYERS}")
-                return
-            
             state.reset()
             state.players = players
             state.total_players = len(players)
             state.is_active = True
             state.start_time = datetime.now()
-            state.text = " ".join(context.args) if context.args else ""
+            # Текст не нужен - только упоминание
+            state.text = ""
             
             await status_msg.edit_text(
                 f"✅ Тег запущен!\n"
                 f"👥 Всего участников: {len(players)}\n"
-                f"⏱ Интервал: {TAG_INTERVAL} сек.\n"
-                f"{'📝 Текст: ' + state.text if state.text else ''}\n\n"
+                f"⏱ Интервал: {TAG_INTERVAL} сек.\n\n"
                 f"Начинаем через 2 секунды..."
             )
             
@@ -261,15 +219,14 @@ class TagBot:
                 
                 player = state.players[state.current_index]
                 
-                mention = f"@{player['username']}" if player['username'] else f"[{player['full_name']}](tg://user?id={player['id']})"
+                # ТОЛЬКО УПОМИНАНИЕ, без дополнительного текста
+                if player['username']:
+                    mention = f"@{player['username']}"
+                else:
+                    mention = f"[{player['full_name']}](tg://user?id={player['id']})"
                 
-                message = f"🔔 **Уведомление!**\n\n"
-                message += f"👤 {mention}\n"
-                
-                if state.text:
-                    message += f"📝 {state.text}\n\n"
-                
-                message += f"📊 Прогресс: {state.current_index + 1}/{state.total_players}"
+                # Просто упоминание игрока
+                message = mention
                 
                 keyboard = [
                     [InlineKeyboardButton("➡️ Следующий", callback_data=f"next_{chat_id}")],
@@ -305,11 +262,9 @@ class TagBot:
                 duration = (datetime.now() - state.start_time).total_seconds() if state.start_time else 0
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=f"✅ **Тег успешно завершен!**\n\n"
+                    text=f"✅ **Тег завершен!**\n\n"
                          f"👥 Всего участников: {state.total_players}\n"
-                         f"⏱ Время выполнения: {duration:.1f} сек.\n"
-                         f"📊 Среднее время на участника: {duration/state.total_players:.1f} сек.\n\n"
-                         f"Используй /tagall для нового тега."
+                         f"⏱ Время: {duration:.1f} сек.\n"
                 )
             else:
                 await context.bot.send_message(
@@ -325,7 +280,6 @@ class TagBot:
             del active_tasks[chat_id]
 
     async def stop_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /stop - остановить тег"""
         chat = update.effective_chat
         
         if not await self.is_admin(update, context):
@@ -349,7 +303,6 @@ class TagBot:
             await update.message.reply_text("❌ Нет активного тега для остановки.")
 
     async def pause_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /pause - приостановить тег"""
         chat = update.effective_chat
         
         if not await self.is_admin(update, context):
@@ -361,14 +314,12 @@ class TagBot:
             state.paused = True
             await update.message.reply_text(
                 f"⏸ Тег приостановлен!\n"
-                f"📊 Прогресс: {state.tagged_count}/{state.total_players}\n"
-                f"Используй /resume для продолжения."
+                f"📊 Прогресс: {state.tagged_count}/{state.total_players}"
             )
         else:
             await update.message.reply_text("❌ Нет активного тега для паузы.")
 
     async def resume_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /resume - продолжить тег"""
         chat = update.effective_chat
         
         if not await self.is_admin(update, context):
@@ -386,7 +337,6 @@ class TagBot:
             await update.message.reply_text("❌ Нет приостановленного тега.")
 
     async def next_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /next - принудительно перейти к следующему"""
         chat = update.effective_chat
         
         if not await self.is_admin(update, context):
@@ -404,7 +354,6 @@ class TagBot:
             await update.message.reply_text("❌ Нет активного тега для перехода.")
 
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /reset - полный сброс"""
         chat = update.effective_chat
         
         if not await self.is_admin(update, context):
@@ -421,7 +370,6 @@ class TagBot:
         await update.message.reply_text("🔄 Тег полностью сброшен! Используй /tagall для нового тега.")
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /status - показать статус тега"""
         chat = update.effective_chat
         state = chat_states[chat.id]
         
@@ -432,20 +380,16 @@ class TagBot:
         status_text = f"""
 📊 **Статус тега:**
 
-👥 Всего участников: {state.total_players}
+👥 Всего: {state.total_players}
 ✅ Протегано: {state.tagged_count}
 📈 Осталось: {state.total_players - state.tagged_count}
 ⏳ Прогресс: {int((state.tagged_count / state.total_players) * 100) if state.total_players > 0 else 0}%
 
 ⏱ Статус: {'▶️ Активен' if not state.paused else '⏸ На паузе'}
-🕐 Начало: {state.start_time.strftime('%H:%M:%S') if state.start_time else 'Не указано'}
-
-📝 Текст: {state.text if state.text else 'Не указан'}
 """
         await update.message.reply_text(status_text, parse_mode=ParseMode.MARKDOWN)
 
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик нажатий на кнопки"""
         query = update.callback_query
         await query.answer()
         
@@ -503,7 +447,6 @@ class TagBot:
                 await query.edit_message_text("❌ Нет активного тега для остановки.")
 
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик ошибок"""
         logger.error(f"Ошибка: {context.error}")
         
         if update and update.effective_chat:
@@ -516,29 +459,17 @@ class TagBot:
                 pass
 
     async def post_init(self, application: Application):
-        """Действия после инициализации"""
         logger.info("🚀 Бот TagMaster успешно запущен!")
         logger.info(f"📊 Интервал между тегами: {TAG_INTERVAL} сек.")
-        logger.info(f"👥 Максимум участников: {MAX_PLAYERS}")
 
     def run(self):
-        """Запуск бота"""
-        # Создаем приложение без прокси
         self.application = Application.builder().token(self.token).build()
-
-        # Настраиваем обработчики
         self.setup_handlers()
-
-        # Добавляем post_init
         self.application.post_init = self.post_init
-
-        # Запускаем бота
         logger.info("Бот запускается...")
         self.application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-# ========== ЗАПУСК ==========
 def main():
-    """Главная функция"""
     bot = TagBot(BOT_TOKEN)
     bot.run()
 
